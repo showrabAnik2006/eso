@@ -1,0 +1,2132 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pen Fight 2D - Fixed Points & Economy Edition</title>
+    <!-- WebRTC PeerJS for Multiplayer -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body {
+            background: radial-gradient(circle at center, #151821, #0a0b10);
+            color: #f1faee;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #game-wrapper {
+            position: relative;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.95);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        canvas {
+            display: block;
+            background: #111319;
+            cursor: crosshair;
+        }
+        /* Top Navigation Overlay */
+        .hud-bar {
+            position: absolute;
+            top: 12px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .hud-bar * {
+            pointer-events: auto;
+        }
+        .btn-ui {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-ui:hover {
+            background: rgba(255, 255, 255, 0.25);
+            transform: translateY(-1px);
+        }
+        .hud-status-box {
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(8px);
+            padding: 6px 18px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #38bdf8;
+        }
+
+        /* Points Display Badge */
+        .hud-points-badge {
+            background: linear-gradient(135deg, rgba(234, 179, 8, 0.25), rgba(161, 98, 7, 0.4));
+            border: 1px solid #facc15;
+            color: #fef08a;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 800;
+            box-shadow: 0 0 15px rgba(250, 204, 21, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Toast Reward Popup */
+        #reward-toast {
+            position: absolute;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-20px);
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: #fff;
+            padding: 8px 22px;
+            border-radius: 20px;
+            font-weight: 800;
+            font-size: 15px;
+            box-shadow: 0 8px 25px rgba(245, 158, 11, 0.6);
+            border: 1px solid #fde047;
+            pointer-events: none;
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 100;
+        }
+        #reward-toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* Power Ability Button */
+        #btn-power-trigger {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            border: 1px solid #fde047;
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
+            animation: pulse-glow 2s infinite;
+        }
+        #btn-power-trigger.active {
+            background: linear-gradient(135deg, #10b981, #059669);
+            border-color: #6ee7b7;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.7);
+        }
+        #btn-power-trigger.cooldown {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: none;
+            color: #64748b;
+            cursor: not-allowed;
+            animation: none;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 10px rgba(245, 158, 11, 0.4); }
+            50% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.8); }
+        }
+
+        /* Modals & Screens */
+        .modal {
+            position: absolute;
+            inset: 0;
+            background: rgba(10, 12, 18, 0.94);
+            backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            padding: 20px;
+        }
+        .modal.hidden {
+            display: none !important;
+        }
+        .title-gradient {
+            font-size: 38px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            margin-bottom: 6px;
+            background: linear-gradient(45deg, #f43f5e, #fb923c, #38bdf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            font-size: 14px;
+            color: #94a3b8;
+            margin-bottom: 24px;
+        }
+
+        /* 4 Game Modes Grid */
+        .mode-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 215px);
+            gap: 16px;
+            margin-bottom: 25px;
+        }
+        .mode-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            padding: 20px 16px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.25s ease;
+        }
+        .mode-card:hover {
+            background: rgba(255, 255, 255, 0.12);
+            transform: translateY(-5px);
+            border-color: #38bdf8;
+            box-shadow: 0 10px 25px rgba(56, 189, 248, 0.25);
+        }
+        .mode-card h3 {
+            font-size: 17px;
+            color: #38bdf8;
+            margin-bottom: 8px;
+        }
+        .mode-card p {
+            font-size: 11.5px;
+            color: #cbd5e1;
+            line-height: 1.5;
+        }
+
+        /* 16-Stage Selector Modal */
+        .arena-select-box {
+            width: 920px;
+            max-width: 95%;
+            height: 560px;
+            background: rgba(18, 22, 31, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 14px;
+            display: flex;
+            flex-direction: column;
+            padding: 22px;
+        }
+        .theme-tabs {
+            display: flex;
+            gap: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+        }
+        .theme-tab-btn {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #94a3b8;
+            padding: 10px 8px;
+            border-radius: 8px;
+            font-size: 12.5px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .theme-tab-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .theme-tab-btn.active {
+            background: #0284c7;
+            color: #fff;
+            border-color: #38bdf8;
+            box-shadow: 0 0 15px rgba(2, 132, 199, 0.4);
+        }
+        .stages-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            flex: 1;
+            overflow-y: auto;
+        }
+        .stage-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .stage-card:hover {
+            background: rgba(56, 189, 248, 0.12);
+            border-color: #38bdf8;
+            transform: translateY(-2px);
+        }
+        .stage-card h4 {
+            font-size: 16px;
+            color: #f1faee;
+            margin-bottom: 6px;
+        }
+        .stage-card p {
+            font-size: 12px;
+            color: #94a3b8;
+            line-height: 1.4;
+        }
+        .stage-badge {
+            align-self: flex-start;
+            margin-top: 10px;
+            background: rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        /* Pen Garage UI */
+        .garage-box {
+            width: 890px;
+            max-width: 95%;
+            height: 540px;
+            background: rgba(20, 24, 33, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+        .garage-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 12px;
+            margin-bottom: 12px;
+        }
+        .filter-tabs {
+            display: flex;
+            gap: 8px;
+        }
+        .tab-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #94a3b8;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .tab-btn.active {
+            background: #0284c7;
+            color: #fff;
+            border-color: #38bdf8;
+        }
+        .pen-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+            gap: 12px;
+            overflow-y: auto;
+            padding-right: 8px;
+        }
+        .pen-grid::-webkit-scrollbar {
+            width: 6px;
+        }
+        .pen-grid::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        .pen-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .pen-card:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #38bdf8;
+        }
+        .pen-card.selected {
+            border: 2px solid #38bdf8;
+            background: rgba(56, 189, 248, 0.15);
+        }
+        .pen-card.locked {
+            opacity: 0.8;
+            border-style: dashed;
+        }
+        .pen-preview-bar {
+            height: 12px;
+            border-radius: 6px;
+            margin: 6px 0;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+        .ability-badge {
+            margin-top: 6px;
+            background: rgba(245, 158, 11, 0.15);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: 4px;
+            padding: 4px;
+            font-size: 10px;
+            color: #fde047;
+            line-height: 1.3;
+        }
+        .btn-buy-pen {
+            margin-top: 8px;
+            width: 100%;
+            padding: 6px 0;
+            border-radius: 5px;
+            border: none;
+            font-weight: 700;
+            font-size: 11px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-buy-pen.buy {
+            background: #eab308;
+            color: #000;
+        }
+        .btn-buy-pen.buy:hover {
+            background: #facc15;
+        }
+        .btn-buy-pen.select {
+            background: #0284c7;
+            color: #fff;
+        }
+        .btn-buy-pen.active {
+            background: #10b981;
+            color: #fff;
+        }
+        .btn-reset-points {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #f87171;
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .btn-reset-points:hover {
+            background: #ef4444;
+            color: #fff;
+        }
+
+        /* Online Room UI */
+        .online-box {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 24px;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 380px;
+            text-align: center;
+        }
+        .online-box input {
+            padding: 10px 14px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(0, 0, 0, 0.4);
+            color: #fff;
+            font-size: 15px;
+            text-align: center;
+            outline: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-wrapper">
+        <!-- Floating Reward Toast -->
+        <div id="reward-toast">🏆 +10 পয়েন্ট অর্জন!</div>
+
+        <!-- Top HUD -->
+        <div class="hud-bar">
+            <button class="btn-ui" id="btn-back-menu">◀ মেইন মেনু</button>
+            <div class="hud-status-box" id="hud-status">পেন ফাইট এরিনা</div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <div class="hud-points-badge" id="hud-points-display">🪙 পয়েন্ট: 0</div>
+                <button class="btn-ui" id="btn-power-trigger">⚡ পাওয়ার রেডি [Space]</button>
+                <button class="btn-ui" id="btn-open-garage">🖊️ পেন শপ</button>
+                <button class="btn-ui" id="btn-restart">রিস্টার্ট [R]</button>
+            </div>
+        </div>
+
+        <canvas id="canvas" width="1050" height="640"></canvas>
+
+        <!-- Main Menu -->
+        <div class="modal" id="modal-menu">
+            <h1 class="title-gradient">PEN FIGHT ARENA</h1>
+            <p class="subtitle">বাংলাদেশ ও ভারতের ১০০টি কলম • পয়েন্ট জিতে নতুন পেন আনলক করুন</p>
+
+            <div class="hud-points-badge" id="menu-points-display" style="margin-bottom: 20px; font-size: 16px; padding: 8px 24px;">🪙 মোট পয়েন্ট: 0</div>
+
+            <div class="mode-grid">
+                <div class="mode-card" id="btn-mode-obstacle">
+                    <h3>🛡️ ১৬ অবস্ট্যাকল এরিনা</h3>
+                    <p>প্রতি স্টেজ পার হলে পাবেন <strong>১০ পয়েন্ট</strong>! ৪টি থিমে ১৬টি ট্রিক-শট চ্যালেঞ্জ।</p>
+                </div>
+                <div class="mode-card" id="btn-mode-campaign">
+                    <h3>🏆 লেভেল চ্যালেঞ্জ</h3>
+                    <p>প্রতিটি এআই বটকে হারালে পাবেন <strong>১০ পয়েন্ট</strong>! ৫ ধাপে ট্রফি জিতুন।</p>
+                </div>
+                <div class="mode-card" id="btn-mode-time">
+                    <h3>⏱️ টাইম অ্যাটাক</h3>
+                    <p>প্রতি পেনে <strong>১ পয়েন্ট</strong>! ৬০ সেকেন্ডে ৩০+ পেন ফেললে <strong>+১০ এক্সট্রা বোনাস</strong>!</p>
+                </div>
+                <div class="mode-card" id="btn-mode-online">
+                    <h3>🌐 অনলাইন ২-প্লেয়ার</h3>
+                    <p>রুম কোড শেয়ার করে দূর থেকে বন্ধুর সাথে মুখোমুখি রিয়েল-টাইম পেন ফাইট খেলুন।</p>
+                </div>
+            </div>
+
+            <button class="btn-ui" id="btn-menu-garage" style="background: #0284c7; padding: 10px 24px;">🖊️ পেন শপ ও গ্যারেজ (পয়েন্ট দিয়ে পেন কিনুন)</button>
+        </div>
+
+        <!-- 16-Stage Arena Selector Modal -->
+        <div class="modal hidden" id="modal-stage-select">
+            <div class="arena-select-box">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+                    <div>
+                        <h2 style="font-size: 22px; color: #38bdf8;">১৬টি অবস্ট্যাকল এরিনা স্টেজ (জিতলেই +১০ পয়েন্ট)</h2>
+                        <p style="font-size: 12px; color: #94a3b8;">আপনার পছন্দের টেবিল থিম ও কৌশলগত স্টেজ বেছে নিন</p>
+                    </div>
+                    <button class="btn-ui" id="btn-close-stages">বন্ধ করুন ✕</button>
+                </div>
+
+                <div class="theme-tabs">
+                    <button class="theme-tab-btn active" data-theme="cafe">☕ ১. মিনিমালিস্ট ক্যাফে</button>
+                    <button class="theme-tab-btn" data-theme="rustic">🪵 ২. রাস্টিক ভিন্টেজ উড</button>
+                    <button class="theme-tab-btn" data-theme="parquet">🟤 ৩. অ্যাম্বার পারকেট</button>
+                    <button class="theme-tab-btn" data-theme="coffee">🪨 ৪. আর্টিসান স্টোন</button>
+                </div>
+
+                <div class="stages-grid" id="stages-container"></div>
+            </div>
+        </div>
+
+        <!-- Pen Garage & Shop Modal (100 Pens) -->
+        <div class="modal hidden" id="modal-garage">
+            <div class="garage-box">
+                <div class="garage-header">
+                    <div>
+                        <h2 style="font-size: 20px;">পেন শপ ও গ্যারেজ (১০০টি মডেল)</h2>
+                        <span style="font-size: 12px; color: #94a3b8;" id="selected-pen-name-display">বর্তমান পেন: Matador Pinpoint</span>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <button class="btn-reset-points" id="btn-reset-points" title="পয়েন্ট ০ থেকে শুরু করতে চাইলে">পয়েন্ট রিসেট (০)</button>
+                        <div class="hud-points-badge" id="garage-points-display" style="font-size: 13px; padding: 4px 14px;">🪙 পয়েন্ট: 0</div>
+                        <div class="filter-tabs">
+                            <button class="tab-btn active" data-filter="all">সব (১০০)</button>
+                            <button class="tab-btn" data-filter="Gel">জেল (২৫)</button>
+                            <button class="tab-btn" data-filter="Ballpoint">বলপেন (২৫)</button>
+                            <button class="tab-btn" data-filter="Rollerball">রোলারবল (২৫)</button>
+                            <button class="tab-btn" data-filter="Fountain">ফাউন্টেন (২৫)</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="pen-grid" id="pen-grid-container"></div>
+                <div style="margin-top: 14px; text-align: right;">
+                    <button class="btn-ui" id="btn-close-garage" style="background: #0284c7; padding: 8px 24px;">খেলায় ফিরুন</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Online Lobby Modal -->
+        <div class="modal hidden" id="modal-online">
+            <h2 style="margin-bottom: 8px;">অনলাইন মাল্টিপ্লেয়ার</h2>
+            <p class="subtitle" style="margin-bottom: 16px;">উভয় খেলোয়াড়ের রুম কোড দিয়ে কানেক্ট হতে হবে</p>
+
+            <div class="online-box">
+                <div>
+                    <label style="font-size: 12px; color: #94a3b8; display: block; margin-bottom: 4px;">আপনার রুম কোড (Host):</label>
+                    <input type="text" id="my-peer-id" readonly placeholder="কোড তৈরি হচ্ছে..." />
+                </div>
+                <div style="font-size: 12px; color: #64748b;">— অথবা বন্ধুর কোড লিখুন —</div>
+                <div>
+                    <input type="text" id="join-peer-id" placeholder="বন্ধুর রুম কোড পেস্ট করুন" />
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: center; margin-top: 6px;">
+                    <button class="btn-ui" id="btn-join-room" style="background: #0284c7;">রুমে জয়েন করুন</button>
+                    <button class="btn-ui" id="btn-cancel-online">বাতিল</button>
+                </div>
+                <div id="online-status-text" style="font-size: 12px; color: #38bdf8; min-height: 16px;"></div>
+            </div>
+        </div>
+
+        <!-- Result Modal -->
+        <div class="modal hidden" id="modal-gameover">
+            <h2 id="go-title" style="font-size: 32px; margin-bottom: 8px;">ম্যাচ শেষ!</h2>
+            <p id="go-desc" style="font-size: 15px; color: #cbd5e1; margin-bottom: 24px;"></p>
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-ui" id="go-btn-action" style="background: #0284c7; padding: 10px 22px;">পরবর্তী ম্যাচ</button>
+                <button class="btn-ui" id="go-btn-menu" style="padding: 10px 22px;">মেনুতে ফিরুন</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* =================== পয়েন্ট ও ইকোনমি সিস্টেম (নতুন ইউজার = ০ পয়েন্ট) =================== */
+        let playerPoints = parseInt(localStorage.getItem('penFight_points') !== null ? localStorage.getItem('penFight_points') : '0');
+        // ডিফল্ট আনলকড স্টার্টিং পেন (Matador Pinpoint, ID: 26)
+        let unlockedPenIds = JSON.parse(localStorage.getItem('penFight_unlocked') || '[26]');
+
+        // ম্যাচ শেষ ল্যাচ (যাতে প্রতি ফ্রেমে বারবার পয়েন্ট যোগ না হয়)
+        let isRoundOver = false;
+
+        function saveEconomy() {
+            localStorage.setItem('penFight_points', playerPoints.toString());
+            localStorage.setItem('penFight_unlocked', JSON.stringify(unlockedPenIds));
+            updatePointsDisplays();
+        }
+
+        function updatePointsDisplays() {
+            const txt = `🪙 পয়েন্ট: ${playerPoints}`;
+            document.getElementById('hud-points-display').innerText = txt;
+            document.getElementById('menu-points-display').innerText = `🪙 মোট পয়েন্ট: ${playerPoints}`;
+            document.getElementById('garage-points-display').innerText = txt;
+        }
+
+        function showRewardToast(text) {
+            const toast = document.getElementById('reward-toast');
+            toast.innerText = text;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2400);
+        }
+
+        function addPoints(amount, reason) {
+            playerPoints += amount;
+            saveEconomy();
+            soundPower();
+            showRewardToast(`🏆 +${amount} পয়েন্ট! (${reason})`);
+        }
+
+        function getPenPrice(pen) {
+            if (pen.id === 26) return 0; // Matador Pinpoint ফ্রি
+            if (pen.type === "Fountain") return 100;
+            if (pen.type === "Rollerball") return 60;
+            if (pen.type === "Gel") return 40;
+            return 25; // Ballpoint
+        }
+
+        document.getElementById('btn-reset-points').onclick = () => {
+            if (confirm("আপনি কি পয়েন্ট রিসেট করে ০ করতে চান?")) {
+                playerPoints = 0;
+                saveEconomy();
+                showRewardToast("পয়েন্ট রিসেট হয়ে ০ হয়েছে!");
+            }
+        };
+
+        /* =================== বৈজ্ঞানিক পাওয়ার ডেটা =================== */
+        const CATEGORY_POWERS = {
+            "Gel": {
+                name: "⚡ টার্বো ড্যাশ (Turbo Dash)",
+                passive: "জিরো-প্রেশার গ্লাইড (গতি +২৫%)",
+                desc: "থিক্সোট্রপিক কালি দ্রুত গতিতে ড্যাশ দেয়।",
+                color: "#10b981"
+            },
+            "Ballpoint": {
+                name: "🔒 ইস্পাত নোঙর (Firm Anchor)",
+                passive: "অয়েল গ্রিপ (নকব্যাক রেজিস্ট্যান্স +৪০%)",
+                desc: "তেলভিত্তিক কালির উচ্চ গ্রিপে কিনারায় ব্রেক ধরে।",
+                color: "#f59e0b"
+            },
+            "Rollerball": {
+                name: "🌊 হাইড্রো শকওয়েভ (Hydro Shockwave)",
+                passive: "লিকুইড মোমেন্টাম (+৩০% ধাক্কা বল)",
+                desc: "লিকুইড কালির বিস্ফোরক ধাক্কায় দূরে ছিটকে ফেলে।",
+                color: "#06b6d4"
+            },
+            "Fountain": {
+                name: "👑 গোল্ডেন নিব পিয়ার্স (Nib Pierce)",
+                passive: "মেটাল ফোরট্রেস (ভারী ডিফেন্স +৫০% ভর)",
+                desc: "তীক্ষ্ণ মেটাল নিব দিয়ে প্রতিপক্ষকে স্পিন শট দেয়।",
+                color: "#eab308"
+            }
+        };
+
+        /* =================== ১০০টি কলমের ডাটাবেজ =================== */
+        const PEN_DATABASE = [
+            // জেল পেন (২৫টি)
+            { id: 1, name: "Linc Pentonic Gel", country: "🇮🇳", type: "Gel", mass: 0.85, speed: 1.15, body: "#1a1a1a", cap: "#a855f7" },
+            { id: 2, name: "Matador Gel Glider", country: "🇧🇩", type: "Gel", mass: 0.88, speed: 1.12, body: "#1d4ed8", cap: "#93c5fd" },
+            { id: 3, name: "Cello Geltec", country: "🇮🇳", type: "Gel", mass: 0.82, speed: 1.16, body: "#2563eb", cap: "#ffffff" },
+            { id: 4, name: "Classmate Octane Gel", country: "🇮🇳", type: "Gel", mass: 0.90, speed: 1.10, body: "#16a34a", cap: "#1f2937" },
+            { id: 5, name: "Flair Glass Gel", country: "🇮🇳", type: "Gel", mass: 0.80, speed: 1.18, body: "#67e8f9", cap: "#0284c7" },
+            { id: 6, name: "Matador i-teen Gel", country: "🇧🇩", type: "Gel", mass: 0.85, speed: 1.14, body: "#eab308", cap: "#0f172a" },
+            { id: 7, name: "Doms Fusion Gel", country: "🇮🇳", type: "Gel", mass: 0.88, speed: 1.12, body: "#f97316", cap: "#1e3a8a" },
+            { id: 8, name: "Hauser XO Gel", country: "🇮🇳", type: "Gel", mass: 0.92, speed: 1.08, body: "#0f172a", cap: "#38bdf8" },
+            { id: 9, name: "Cello Flo Gel", country: "🇮🇳", type: "Gel", mass: 0.84, speed: 1.15, body: "#3b82f6", cap: "#1d4ed8" },
+            { id: 10, name: "Linc Ocean Gel", country: "🇮🇳", type: "Gel", mass: 0.83, speed: 1.16, body: "#06b6d4", cap: "#0891b2" },
+            { id: 11, name: "Matador Neon Gel", country: "🇧🇩", type: "Gel", mass: 0.86, speed: 1.13, body: "#ec4899", cap: "#18181b" },
+            { id: 12, name: "Flair SRX Gel", country: "🇮🇳", type: "Gel", mass: 0.89, speed: 1.11, body: "#dc2626", cap: "#1f2937" },
+            { id: 13, name: "Classmate Hook Gel", country: "🇮🇳", type: "Gel", mass: 0.91, speed: 1.09, body: "#8b5cf6", cap: "#4c1d95" },
+            { id: 14, name: "Good Luck Gel Master", country: "🇧🇩", type: "Gel", mass: 0.87, speed: 1.12, body: "#0d9488", cap: "#115e59" },
+            { id: 15, name: "Cello Pointec Gel", country: "🇮🇳", type: "Gel", mass: 0.85, speed: 1.14, body: "#2563eb", cap: "#60a5fa" },
+            { id: 16, name: "Luxor Gel Writer", country: "🇮🇳", type: "Gel", mass: 0.88, speed: 1.12, body: "#94a3b8", cap: "#0f172a" },
+            { id: 17, name: "Camlin Trinity Gel", country: "🇮🇳", type: "Gel", mass: 0.90, speed: 1.10, body: "#881337", cap: "#be123c" },
+            { id: 18, name: "Econo Gel Spark", country: "🇧🇩", type: "Gel", mass: 0.84, speed: 1.15, body: "#ea580c", cap: "#c2410c" },
+            { id: 19, name: "Nataraj Gelix", country: "🇮🇳", type: "Gel", mass: 0.83, speed: 1.16, body: "#b91c1c", cap: "#ffffff" },
+            { id: 20, name: "Montex Winner Gel", country: "🇮🇳", type: "Gel", mass: 0.92, speed: 1.08, body: "#1e3a8a", cap: "#ca8a04" },
+            { id: 21, name: "Flair Yolo Gel", country: "🇮🇳", type: "Gel", mass: 0.85, speed: 1.14, body: "#84cc16", cap: "#3f6212" },
+            { id: 22, name: "Reynolds Lumina Gel", country: "🇮🇳", type: "Gel", mass: 0.87, speed: 1.12, body: "#a855f7", cap: "#7e22ce" },
+            { id: 23, name: "Cello Butterflow Gel", country: "🇮🇳", type: "Gel", mass: 0.91, speed: 1.09, body: "#1d4ed8", cap: "#e2e8f0" },
+            { id: 24, name: "RFL Click Gel", country: "🇧🇩", type: "Gel", mass: 0.88, speed: 1.12, body: "#18181b", cap: "#ef4444" },
+            { id: 25, name: "Janani Gel Super", country: "🇧🇩", type: "Gel", mass: 0.84, speed: 1.15, body: "#38bdf8", cap: "#0369a1" },
+
+            // বলপয়েন্ট পেন (২৫টি)
+            { id: 26, name: "Matador Pinpoint", country: "🇧🇩", type: "Ballpoint", mass: 1.00, speed: 1.00, body: "#f8fafc", cap: "#dc2626" },
+            { id: 27, name: "Matador All-Rounder", country: "🇧🇩", type: "Ballpoint", mass: 1.02, speed: 0.99, body: "#f97316", cap: "#2563eb" },
+            { id: 28, name: "Econo DX", country: "🇧🇩", type: "Ballpoint", mass: 0.96, speed: 1.02, body: "#f1f5f9", cap: "#b91c1c" },
+            { id: 29, name: "Reynolds 045 Carbure", country: "🇮🇳", type: "Ballpoint", mass: 0.94, speed: 1.04, body: "#ffffff", cap: "#1d4ed8" },
+            { id: 30, name: "Cello Gripper", country: "🇮🇳", type: "Ballpoint", mass: 1.05, speed: 0.97, body: "#1e40af", cap: "#09090b" },
+            { id: 31, name: "Cello Butterflow Ball", country: "🇮🇳", type: "Ballpoint", mass: 1.03, speed: 0.98, body: "#3b82f6", cap: "#94a3b8" },
+            { id: 32, name: "Linc Pentonic Ball", country: "🇮🇳", type: "Ballpoint", mass: 1.00, speed: 1.00, body: "#09090b", cap: "#27272a" },
+            { id: 33, name: "Matador Hi-School", country: "🇧🇩", type: "Ballpoint", mass: 0.98, speed: 1.01, body: "#18181b", cap: "#e2e8f0" },
+            { id: 34, name: "Matador Orbit", country: "🇧🇩", type: "Ballpoint", mass: 1.04, speed: 0.98, body: "#475569", cap: "#06b6d4" },
+            { id: 35, name: "Flair Writometer", country: "🇮🇳", type: "Ballpoint", mass: 1.08, speed: 0.96, body: "#cbd5e1", cap: "#1e293b" },
+            { id: 36, name: "Cello Maxwriter", country: "🇮🇳", type: "Ballpoint", mass: 1.00, speed: 1.00, body: "#f8fafc", cap: "#ca8a04" },
+            { id: 37, name: "Hauser XO Ball", country: "🇮🇳", type: "Ballpoint", mass: 1.02, speed: 0.99, body: "#fbcfe8", cap: "#475569" },
+            { id: 38, name: "Econo DXL", country: "🇧🇩", type: "Ballpoint", mass: 0.97, speed: 1.02, body: "#e0f2fe", cap: "#0284c7" },
+            { id: 39, name: "Doms Groove Ball", country: "🇮🇳", type: "Ballpoint", mass: 1.01, speed: 1.00, body: "#2563eb", cap: "#1d4ed8" },
+            { id: 40, name: "Nataraj Classic Ball", country: "🇮🇳", type: "Ballpoint", mass: 0.95, speed: 1.03, body: "#b91c1c", cap: "#000000" },
+            { id: 41, name: "Montex Mega Top", country: "🇮🇳", type: "Ballpoint", mass: 1.06, speed: 0.97, body: "#1d4ed8", cap: "#cbd5e1" },
+            { id: 42, name: "Linc Glycer", country: "🇮🇳", type: "Ballpoint", mass: 0.98, speed: 1.01, body: "#f3f4f6", cap: "#2563eb" },
+            { id: 43, name: "Matador Brilliant", country: "🇧🇩", type: "Ballpoint", mass: 1.05, speed: 0.97, body: "#ca8a04", cap: "#0f172a" },
+            { id: 44, name: "Good Luck Olympic Ball", country: "🇧🇩", type: "Ballpoint", mass: 0.99, speed: 1.00, body: "#ffffff", cap: "#16a34a" },
+            { id: 45, name: "Cello Finegrip", country: "🇮🇳", type: "Ballpoint", mass: 1.02, speed: 0.99, body: "#3b82f6", cap: "#1e293b" },
+            { id: 46, name: "Classmate Octane Ball", country: "🇮🇳", type: "Ballpoint", mass: 1.03, speed: 0.98, body: "#18181b", cap: "#38bdf8" },
+            { id: 47, name: "Matador Supremo", country: "🇧🇩", type: "Ballpoint", mass: 1.08, speed: 0.95, body: "#334155", cap: "#64748b" },
+            { id: 48, name: "Reynolds Jetter", country: "🇮🇳", type: "Ballpoint", mass: 1.10, speed: 0.95, body: "#e2e8f0", cap: "#1e40af" },
+            { id: 49, name: "Flair Carbon", country: "🇮🇳", type: "Ballpoint", mass: 1.06, speed: 0.97, body: "#0f172a", cap: "#334155" },
+            { id: 50, name: "Econo Super Ball", country: "🇧🇩", type: "Ballpoint", mass: 0.98, speed: 1.01, body: "#fef08a", cap: "#dc2626" },
+
+            // রোলারবল পেন (২৫টি)
+            { id: 51, name: "Reynolds Trimax", country: "🇮🇳", type: "Rollerball", mass: 1.25, speed: 1.05, body: "#cbd5e1", cap: "#1d4ed8" },
+            { id: 52, name: "Flair Inky Liquid", country: "🇮🇳", type: "Rollerball", mass: 1.15, speed: 1.08, body: "#ec4899", cap: "#f472b6" },
+            { id: 53, name: "Parker Vector Roller", country: "🇮🇳", type: "Rollerball", mass: 1.35, speed: 0.98, body: "#18181b", cap: "#94a3b8" },
+            { id: 54, name: "Matador Matrix Roller", country: "🇧🇩", type: "Rollerball", mass: 1.28, speed: 1.02, body: "#334155", cap: "#0284c7" },
+            { id: 55, name: "Cello Freeflow Roller", country: "🇮🇳", type: "Rollerball", mass: 1.22, speed: 1.04, body: "#38bdf8", cap: "#0f172a" },
+            { id: 56, name: "Luxor Precise V5", country: "🇮🇳", type: "Rollerball", mass: 1.20, speed: 1.06, body: "#64748b", cap: "#0284c7" },
+            { id: 57, name: "Hauser Fluidic Roller", country: "🇮🇳", type: "Rollerball", mass: 1.30, speed: 1.00, body: "#0f172a", cap: "#cbd5e1" },
+            { id: 58, name: "Classmate Carbon Roller", country: "🇮🇳", type: "Rollerball", mass: 1.26, speed: 1.03, body: "#1e293b", cap: "#475569" },
+            { id: 59, name: "Matador Direct Liquid", country: "🇧🇩", type: "Rollerball", mass: 1.18, speed: 1.07, body: "#ef4444", cap: "#991b1b" },
+            { id: 60, name: "Camlin Elegante Roller", country: "🇮🇳", type: "Rollerball", mass: 1.32, speed: 0.99, body: "#881337", cap: "#cbd5e1" },
+            { id: 61, name: "Doms Liquid Pro Roller", country: "🇮🇳", type: "Rollerball", mass: 1.24, speed: 1.03, body: "#475569", cap: "#84cc16" },
+            { id: 62, name: "Good Luck Smooth Roller", country: "🇧🇩", type: "Rollerball", mass: 1.20, speed: 1.05, body: "#0f766e", cap: "#14b8a6" },
+            { id: 63, name: "Flair E-Liquid Roller", country: "🇮🇳", type: "Rollerball", mass: 1.17, speed: 1.07, body: "#7c3aed", cap: "#a78bfa" },
+            { id: 64, name: "Cello Liqui-Ball Roller", country: "🇮🇳", type: "Rollerball", mass: 1.21, speed: 1.05, body: "#e2e8f0", cap: "#2563eb" },
+            { id: 65, name: "Luxor Schneider One", country: "🇮🇳", type: "Rollerball", mass: 1.30, speed: 1.01, body: "#1e293b", cap: "#06b6d4" },
+            { id: 66, name: "Econo Sign Liquid", country: "🇧🇩", type: "Rollerball", mass: 1.23, speed: 1.04, body: "#15803d", cap: "#166534" },
+            { id: 67, name: "Hauser Sonic Roller", country: "🇮🇳", type: "Rollerball", mass: 1.27, speed: 1.02, body: "#09090b", cap: "#f97316" },
+            { id: 68, name: "Montex Liquid Pro", country: "🇮🇳", type: "Rollerball", mass: 1.29, speed: 1.01, body: "#94a3b8", cap: "#1e3a8a" },
+            { id: 69, name: "Flair Writo-Liquid", country: "🇮🇳", type: "Rollerball", mass: 1.19, speed: 1.06, body: "#2563eb", cap: "#ea580c" },
+            { id: 70, name: "Matador Glide Roller", country: "🇧🇩", type: "Rollerball", mass: 1.25, speed: 1.03, body: "#f8fafc", cap: "#ca8a04" },
+            { id: 71, name: "Reynolds Racer Liquid", country: "🇮🇳", type: "Rollerball", mass: 1.16, speed: 1.08, body: "#eab308", cap: "#ca8a04" },
+            { id: 72, name: "Luxor Graphic Roller", country: "🇮🇳", type: "Rollerball", mass: 1.22, speed: 1.04, body: "#334155", cap: "#e2e8f0" },
+            { id: 73, name: "RFL Flow Roller", country: "🇧🇩", type: "Rollerball", mass: 1.24, speed: 1.03, body: "#451a03", cap: "#ca8a04" },
+            { id: 74, name: "Cello Precise Liquid", country: "🇮🇳", type: "Rollerball", mass: 1.20, speed: 1.05, body: "#3f6212", cap: "#65a30d" },
+            { id: 75, name: "Janani Roller Jet", country: "🇧🇩", type: "Rollerball", mass: 1.21, speed: 1.04, body: "#1d4ed8", cap: "#1e40af" },
+
+            // ফাউন্টেন পেন (২৫টি)
+            { id: 76, name: "Camlin Kokuyo 47", country: "🇮🇳", type: "Fountain", mass: 1.60, speed: 0.82, body: "#14532d", cap: "#ca8a04" },
+            { id: 77, name: "Parker Vector Fountain", country: "🇮🇳", type: "Fountain", mass: 1.55, speed: 0.85, body: "#e2e8f0", cap: "#cbd5e1" },
+            { id: 78, name: "Click Aristocrat", country: "🇮🇳", type: "Fountain", mass: 1.58, speed: 0.84, body: "#1e3a8a", cap: "#3b82f6" },
+            { id: 79, name: "Kanwrite Desire", country: "🇮🇳", type: "Fountain", mass: 1.65, speed: 0.80, body: "#78350f", cap: "#b45309" },
+            { id: 80, name: "Airmail 69A Ebonite", country: "🇮🇳", type: "Fountain", mass: 1.70, speed: 0.78, body: "#09090b", cap: "#ca8a04" },
+            { id: 81, name: "Matador Classic Fountain", country: "🇧🇩", type: "Fountain", mass: 1.50, speed: 0.88, body: "#0f172a", cap: "#e2e8f0" },
+            { id: 82, name: "Camlin Trinity Fountain", country: "🇮🇳", type: "Fountain", mass: 1.52, speed: 0.87, body: "#1d4ed8", cap: "#94a3b8" },
+            { id: 83, name: "Flair Inky Fountain", country: "🇮🇳", type: "Fountain", mass: 1.42, speed: 0.92, body: "#0284c7", cap: "#f97316" },
+            { id: 84, name: "Parker Beta Fountain", country: "🇮🇳", type: "Fountain", mass: 1.48, speed: 0.89, body: "#dc2626", cap: "#ca8a04" },
+            { id: 85, name: "Click Renaissance", country: "🇮🇳", type: "Fountain", mass: 1.62, speed: 0.82, body: "#581c87", cap: "#c084fc" },
+            { id: 86, name: "Econo Heritage Fountain", country: "🇧🇩", type: "Fountain", mass: 1.54, speed: 0.86, body: "#881337", cap: "#ca8a04" },
+            { id: 87, name: "Hauser Inox Fountain", country: "🇮🇳", type: "Fountain", mass: 1.68, speed: 0.80, body: "#cbd5e1", cap: "#94a3b8" },
+            { id: 88, name: "Ranga Model 3 Bamboo", country: "🇮🇳", type: "Fountain", mass: 1.75, speed: 0.76, body: "#713f12", cap: "#854d0e" },
+            { id: 89, name: "Oliver Exam Fountain", country: "🇮🇳", type: "Fountain", mass: 1.45, speed: 0.90, body: "#0369a1", cap: "#38bdf8" },
+            { id: 90, name: "Classmate Fountain", country: "🇮🇳", type: "Fountain", mass: 1.46, speed: 0.90, body: "#1e40af", cap: "#94a3b8" },
+            { id: 91, name: "Doms Junior Fountain", country: "🇮🇳", type: "Fountain", mass: 1.40, speed: 0.93, body: "#ea580c", cap: "#facc15" },
+            { id: 92, name: "Luxor Student Fountain", country: "🇮🇳", type: "Fountain", mass: 1.50, speed: 0.88, body: "#e2e8f0", cap: "#1e293b" },
+            { id: 93, name: "Good Luck Royal Fountain", country: "🇧🇩", type: "Fountain", mass: 1.56, speed: 0.85, body: "#4c1d95", cap: "#ca8a04" },
+            { id: 94, name: "Kanwrite Heritage", country: "🇮🇳", type: "Fountain", mass: 1.66, speed: 0.80, body: "#92400e", cap: "#b45309" },
+            { id: 95, name: "Lotus Student Classic", country: "🇮🇳", type: "Fountain", mass: 1.58, speed: 0.84, body: "#09090b", cap: "#cbd5e1" },
+            { id: 96, name: "Montex Fountain Master", country: "🇮🇳", type: "Fountain", mass: 1.55, speed: 0.85, body: "#991b1b", cap: "#ca8a04" },
+            { id: 97, name: "Click Falcon Acrylic", country: "🇮🇳", type: "Fountain", mass: 1.60, speed: 0.83, body: "#0e7490", cap: "#22d3ee" },
+            { id: 98, name: "Airmail 71JT Demonstrator", country: "🇮🇳", type: "Fountain", mass: 1.48, speed: 0.88, body: "#93c5fd", cap: "#60a5fa" },
+            { id: 99, name: "Matador Royal Scholar", country: "🇧🇩", type: "Fountain", mass: 1.55, speed: 0.85, body: "#172554", cap: "#ca8a04" },
+            { id: 100, name: "Camlin Elegante Fountain", country: "🇮🇳", type: "Fountain", mass: 1.64, speed: 0.81, body: "#334155", cap: "#cbd5e1" }
+        ];
+
+        let selectedPenModel = PEN_DATABASE[25]; // Matador Pinpoint
+
+        /* =================== ওয়েব অডিও সিস্টেম =================== */
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+        function initAudio() { if (!audioCtx) audioCtx = new AudioCtx(); }
+        function playTone(freq, type, duration, gainVal = 0.15) {
+            if (!audioCtx) return;
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch(e) {}
+        }
+        function soundFlick() { playTone(240, "sine", 0.12, 0.25); }
+        function soundHit() { playTone(110, "triangle", 0.08, 0.4); }
+        function soundObstacleHit() { playTone(180, "square", 0.07, 0.3); }
+        function soundFall() { playTone(75, "sawtooth", 0.45, 0.3); }
+        function soundPower() { playTone(540, "sine", 0.25, 0.35); }
+
+        /* =================== ক্যানভাস ও টেবিল ফিজিক্স =================== */
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+
+        let currentTableTheme = "cafe";
+
+        const table = {
+            x: 0,
+            y: 0,
+            width: 530,
+            height: 350
+        };
+
+        function updateTableDimensions(penCount, hasObstacles = false) {
+            let baseW = 530;
+            let baseH = 350;
+            if (hasObstacles) {
+                baseW = 650;
+                baseH = 410;
+            }
+            const extraW = Math.max(0, penCount - 2) * 45;
+            const extraH = Math.max(0, penCount - 2) * 26;
+            table.width = Math.min(canvas.width - 90, baseW + extraW);
+            table.height = Math.min(canvas.height - 90, baseH + extraH);
+            table.x = (canvas.width - table.width) / 2;
+            table.y = (canvas.height - table.height) / 2;
+        }
+
+        const BASE_FRICTION = 0.970;
+        const MAX_PULL = 125.0;
+        const POWER_SCALE = 0.086;
+        const MAX_SPEED = 10.5;
+
+        /* =================== অবস্ট্যাকল ক্লাস =================== */
+        let obstacles = [];
+
+        class Obstacle {
+            constructor(type, params, style = "default") {
+                this.type = type;
+                this.params = params;
+                this.style = style;
+            }
+
+            draw() {
+                ctx.save();
+                if (this.type === 'circle') {
+                    const { x, y, r } = this.params;
+                    ctx.fillStyle = "rgba(0,0,0,0.32)";
+                    ctx.beginPath();
+                    ctx.arc(x + 5, y + 6, r, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    const grad = ctx.createRadialGradient(x - r*0.3, y - r*0.3, r*0.1, x, y, r);
+                    if (this.style === "coffee_bowl") {
+                        grad.addColorStop(0, "#854d0e");
+                        grad.addColorStop(0.7, "#543007");
+                        grad.addColorStop(1, "#261304");
+                    } else if (this.style === "rustic_iron") {
+                        grad.addColorStop(0, "#64748b");
+                        grad.addColorStop(0.6, "#334155");
+                        grad.addColorStop(1, "#0f172a");
+                    } else {
+                        grad.addColorStop(0, "#f8fafc");
+                        grad.addColorStop(0.5, "#94a3b8");
+                        grad.addColorStop(1, "#334155");
+                    }
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.strokeStyle = "#ca8a04";
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+
+                    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r * 0.55, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                } else if (this.type === 'rect') {
+                    const { x, y, w, h } = this.params;
+                    ctx.fillStyle = "rgba(0,0,0,0.32)";
+                    ctx.beginPath();
+                    ctx.roundRect(x + 5, y + 6, w, h, 6);
+                    ctx.fill();
+
+                    const grad = ctx.createLinearGradient(x, y, x + w, y + h);
+                    if (this.style === "burlap") {
+                        grad.addColorStop(0, "#b45309");
+                        grad.addColorStop(1, "#78350f");
+                    } else if (this.style === "rustic_timber") {
+                        grad.addColorStop(0, "#475569");
+                        grad.addColorStop(1, "#1e293b");
+                    } else {
+                        grad.addColorStop(0, "#854d0e");
+                        grad.addColorStop(1, "#543007");
+                    }
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.roundRect(x, y, w, h, 6);
+                    ctx.fill();
+
+                    ctx.strokeStyle = "#ca8a04";
+                    ctx.lineWidth = 2.5;
+                    ctx.stroke();
+
+                } else if (this.type === 'triangle') {
+                    const { p1, p2, p3 } = this.params;
+                    ctx.fillStyle = "rgba(0,0,0,0.32)";
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x + 5, p1.y + 6);
+                    ctx.lineTo(p2.x + 5, p2.y + 6);
+                    ctx.lineTo(p3.x + 5, p3.y + 6);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    const grad = ctx.createLinearGradient(p1.x, p1.y, p3.x, p3.y);
+                    grad.addColorStop(0, "#0284c7");
+                    grad.addColorStop(0.5, "#38bdf8");
+                    grad.addColorStop(1, "#0369a1");
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.lineTo(p3.x, p3.y);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    ctx.strokeStyle = "#bae6fd";
+                    ctx.lineWidth = 2.5;
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+        }
+
+        /* =================== পেন ক্লাস =================== */
+        class Pen {
+            constructor(id, x, y, angle, model, isLocal = false) {
+                this.id = id;
+                this.x = x;
+                this.y = y;
+                this.angle = angle;
+                this.model = model;
+                this.isLocal = isLocal;
+                this.mass = model.mass;
+                this.speedMult = model.speed;
+                this.length = model.type === "Fountain" ? 72 : (model.type === "Gel" ? 64 : 68);
+                this.width = model.type === "Fountain" ? 17 : (model.type === "Gel" ? 14 : 15);
+                this.radius = 23;
+                this.vx = 0;
+                this.vy = 0;
+                this.fallen = false;
+                this.counted = false; // টাইম অ্যাটাক পয়েন্ট কাউন্টার
+                this.fallScale = 1.0;
+                this.powerActivated = false;
+            }
+
+            update() {
+                if (this.fallen) {
+                    if (this.fallScale > 0) this.fallScale -= 0.05;
+                    return;
+                }
+
+                let currentFriction = BASE_FRICTION;
+                if (this.model.type === "Gel") currentFriction = 0.982;
+                if (this.model.type === "Ballpoint") currentFriction = 0.962;
+
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vx *= currentFriction;
+                this.vy *= currentFriction;
+
+                if (this.powerActivated && this.model.type === "Ballpoint") {
+                    const margin = 18;
+                    if (this.x < table.x + margin || this.x > table.x + table.width - margin ||
+                        this.y < table.y + margin || this.y > table.y + table.height - margin) {
+                        this.vx *= 0.45;
+                        this.vy *= 0.45;
+                    }
+                }
+
+                if (Math.hypot(this.vx, this.vy) < 0.1) {
+                    this.vx = 0;
+                    this.vy = 0;
+                    this.powerActivated = false;
+                }
+
+                // টেবিলের বাইরে গেলে
+                if (this.x < table.x || this.x > table.x + table.width ||
+                    this.y < table.y || this.y > table.y + table.height) {
+                    if (!this.fallen) {
+                        this.fallen = true;
+                        this.vx = 0;
+                        this.vy = 0;
+                        soundFall();
+                    }
+                }
+            }
+
+            draw() {
+                if (this.fallScale <= 0) return;
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.scale(this.fallScale, this.fallScale);
+                ctx.rotate(this.angle);
+
+                if (this.powerActivated) {
+                    const pMeta = CATEGORY_POWERS[this.model.type];
+                    ctx.shadowColor = pMeta.color;
+                    ctx.shadowBlur = 16;
+                    ctx.strokeStyle = pMeta.color;
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(-this.length/2 - 4, -this.width/2 - 4, this.length + 8, this.width + 8);
+                }
+
+                ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
+                ctx.fillRect(-this.length/2 + 4, -this.width/2 + 5, this.length, this.width);
+
+                ctx.fillStyle = this.model.body;
+                ctx.beginPath();
+                ctx.roundRect(-this.length/2, -this.width/2, this.length, this.width, 3);
+                ctx.fill();
+
+                ctx.fillStyle = this.model.cap;
+                ctx.beginPath();
+                ctx.roundRect(-this.length/2, -this.width/2, this.length * 0.35, this.width, [3,0,0,3]);
+                ctx.fill();
+
+                ctx.fillStyle = (this.model.type === "Fountain" || this.model.body.includes("ca8a04")) ? "#facc15" : "#e2e8f0";
+                ctx.fillRect(-this.length/2 + 4, -this.width/2 - 2, this.length * 0.24, 2.5);
+
+                if (this.model.type === "Fountain") {
+                    ctx.fillStyle = "#ca8a04";
+                    ctx.beginPath();
+                    ctx.moveTo(this.length/2 - 2, -this.width/3);
+                    ctx.lineTo(this.length/2 + 7, 0);
+                    ctx.lineTo(this.length/2 - 2, this.width/3);
+                    ctx.closePath();
+                    ctx.fill();
+                } else {
+                    ctx.fillStyle = "#0f172a";
+                    ctx.beginPath();
+                    ctx.arc(this.length/2 - 1, 0, 3.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        /* =================== অবস্ট্যাকল কলিশন হ্যান্ডলিং =================== */
+        function handleObstacleCollisions(pen) {
+            if (pen.fallen) return;
+
+            obstacles.forEach(obs => {
+                if (obs.type === 'circle') {
+                    const { x, y, r } = obs.params;
+                    const dx = pen.x - x;
+                    const dy = pen.y - y;
+                    const dist = Math.hypot(dx, dy);
+                    const minDist = pen.radius + r;
+
+                    if (dist < minDist && dist > 0.001) {
+                        const nx = dx / dist;
+                        const ny = dy / dist;
+                        const overlap = minDist - dist;
+                        pen.x += nx * overlap;
+                        pen.y += ny * overlap;
+
+                        const dot = pen.vx * nx + pen.vy * ny;
+                        if (dot < 0) {
+                            const restitution = 0.86;
+                            pen.vx -= (1 + restitution) * dot * nx;
+                            pen.vy -= (1 + restitution) * dot * ny;
+                            pen.angle = Math.atan2(pen.vy, pen.vx);
+                            soundObstacleHit();
+                        }
+                    }
+                } else if (obs.type === 'rect') {
+                    const { x, y, w, h } = obs.params;
+                    const closestX = Math.max(x, Math.min(pen.x, x + w));
+                    const closestY = Math.max(y, Math.min(pen.y, y + h));
+                    const dx = pen.x - closestX;
+                    const dy = pen.y - closestY;
+                    const dist = Math.hypot(dx, dy);
+
+                    if (dist < pen.radius) {
+                        let nx = 0, ny = 0;
+                        if (dist > 0.001) {
+                            nx = dx / dist;
+                            ny = dy / dist;
+                        } else {
+                            const dl = Math.abs(pen.x - x);
+                            const dr = Math.abs(x + w - pen.x);
+                            const dt = Math.abs(pen.y - y);
+                            const db = Math.abs(y + h - pen.y);
+                            const m = Math.min(dl, dr, dt, db);
+                            if (m === dl) nx = -1;
+                            else if (m === dr) nx = 1;
+                            else if (m === dt) ny = -1;
+                            else ny = 1;
+                        }
+                        const overlap = pen.radius - dist;
+                        pen.x += nx * overlap;
+                        pen.y += ny * overlap;
+
+                        const dot = pen.vx * nx + pen.vy * ny;
+                        if (dot < 0) {
+                            const restitution = 0.85;
+                            pen.vx -= (1 + restitution) * dot * nx;
+                            pen.vy -= (1 + restitution) * dot * ny;
+                            pen.angle = Math.atan2(pen.vy, pen.vx);
+                            soundObstacleHit();
+                        }
+                    }
+                } else if (obs.type === 'triangle') {
+                    const { p1, p2, p3 } = obs.params;
+                    const edges = [[p1, p2], [p2, p3], [p3, p1]];
+                    let minEdgeDist = Infinity;
+                    let bestNormal = { x: 0, y: 0 };
+                    let bestOverlap = 0;
+
+                    edges.forEach(([a, b]) => {
+                        const abx = b.x - a.x;
+                        const aby = b.y - a.y;
+                        const apx = pen.x - a.x;
+                        const apy = pen.y - a.y;
+                        const abLenSq = abx * abx + aby * aby;
+                        let t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / abLenSq));
+                        const cx = a.x + t * abx;
+                        const cy = a.y + t * aby;
+                        const dx = pen.x - cx;
+                        const dy = pen.y - cy;
+                        const dist = Math.hypot(dx, dy);
+
+                        if (dist < minEdgeDist) {
+                            minEdgeDist = dist;
+                            if (dist > 0.001) {
+                                bestNormal = { x: dx / dist, y: dy / dist };
+                            } else {
+                                bestNormal = { x: -aby / Math.sqrt(abLenSq), y: abx / Math.sqrt(abLenSq) };
+                            }
+                            bestOverlap = pen.radius - dist;
+                        }
+                    });
+
+                    if (minEdgeDist < pen.radius) {
+                        pen.x += bestNormal.x * bestOverlap;
+                        pen.y += bestNormal.y * bestOverlap;
+                        const dot = pen.vx * bestNormal.x + pen.vy * bestNormal.y;
+                        if (dot < 0) {
+                            const restitution = 0.88;
+                            pen.vx -= (1 + restitution) * dot * bestNormal.x;
+                            pen.vy -= (1 + restitution) * dot * bestNormal.y;
+                            pen.angle = Math.atan2(pen.vy, pen.vx);
+                            soundObstacleHit();
+                        }
+                    }
+                }
+            });
+        }
+
+        /* =================== কলম সংঘর্ষ =================== */
+        function handleCollisions() {
+            for (let i = 0; i < pens.length; i++) {
+                handleObstacleCollisions(pens[i]);
+
+                for (let j = i + 1; j < pens.length; j++) {
+                    const p1 = pens[i];
+                    const p2 = pens[j];
+                    if (p1.fallen || p2.fallen) continue;
+
+                    const dx = p2.x - p1.x;
+                    const dy = p2.y - p1.y;
+                    const dist = Math.hypot(dx, dy);
+                    const minDist = p1.radius + p2.radius;
+
+                    if (dist < minDist && dist > 0.001) {
+                        const nx = dx / dist;
+                        const ny = dy / dist;
+
+                        const overlap = minDist - dist;
+                        p1.x -= nx * overlap * 0.5;
+                        p1.y -= ny * overlap * 0.5;
+                        p2.x += nx * overlap * 0.5;
+                        p2.y += ny * overlap * 0.5;
+
+                        const m1 = p1.model.type === "Ballpoint" ? p1.mass * 1.35 : p1.mass;
+                        const m2 = p2.model.type === "Ballpoint" ? p2.mass * 1.35 : p2.mass;
+
+                        const kx = p1.vx - p2.vx;
+                        const ky = p1.vy - p2.vy;
+                        let p = 2 * (nx * kx + ny * ky) / (m1 + m2);
+
+                        if ((p1.powerActivated && p1.model.type === "Rollerball") ||
+                            (p2.powerActivated && p2.model.type === "Rollerball")) {
+                            p *= 1.8;
+                        }
+
+                        if (p1.powerActivated && p1.model.type === "Fountain") {
+                            p2.vx += nx * 4.5;
+                            p2.vy += ny * 4.5;
+                            p2.angle += Math.PI * 0.4;
+                        } else if (p2.powerActivated && p2.model.type === "Fountain") {
+                            p1.vx -= nx * 4.5;
+                            p1.vy -= ny * 4.5;
+                            p1.angle += Math.PI * 0.4;
+                        }
+
+                        if (p > 0) {
+                            soundHit();
+                            p1.vx -= p * m2 * nx;
+                            p1.vy -= p * m2 * ny;
+                            p2.vx += p * m1 * nx;
+                            p2.vy += p * m1 * ny;
+
+                            p1.angle = Math.atan2(p1.vy, p1.vx);
+                            p2.angle = Math.atan2(p2.vy, p2.vx);
+                        }
+                    }
+                }
+            }
+        }
+
+        function isAnyPenMoving() {
+            return pens.some(p => !p.fallen && Math.hypot(p.vx, p.vy) > 0.1);
+        }
+
+        /* =================== ১৬টি অবস্ট্যাকল স্টেজ ডিফিনিশন =================== */
+        const ARENA_THEMES_DATA = {
+            cafe: {
+                title: "☕ মিনিমালিস্ট ক্যাফে টেবিল",
+                stages: [
+                    { id: 1, name: "স্টেজ ১: ডুয়েল সিরামিক পেপারওয়েট", desc: "মাঝখানে দুটি বৃত্তাকার পেপারওয়েট সরাসরি শট আটকে দেয়।", type: "cafe_1" },
+                    { id: 2, name: "স্টেজ ২: ক্রিস্টাল প্রিজম রিফ্লেক্টর", desc: "কেন্দ্রীয় ত্রিভুজ প্রিজমে ধাক্কা খেয়ে নিখুঁত অ্যাঙ্গেলে রিবাউন্ড হয়।", type: "cafe_2" },
+                    { id: 3, name: "স্টেজ ৩: ওক ডিভাইডার ও ডিফেন্স পোস্ট", desc: "আয়তাকার উডেন ব্লক ও সার্কেল পোস্টের চতুর্ভুজ ডিফেন্স।", type: "cafe_3" },
+                    { id: 4, name: "স্টেজ ৪: ক্যাফে আর্ট পিনবল এরিনা", desc: "বৃত্ত, চতুর্ভুজ ও ত্রিভুজ ব্লকের সমন্বয়ে সর্বোচ্চ রিবাউন্ড ক্যাওস!", type: "cafe_4" }
+                ]
+            },
+            rustic: {
+                title: "🪵 রাস্টিক ভিন্টেজ উড",
+                stages: [
+                    { id: 5, name: "স্টেজ ৫: আয়রন গেট ও বোল্ট ব্লক", desc: "টেবিলের কেন্দ্রে ভারী ঢালাই লোহার দুটি মেটাল বল অবস্ট্যাকল।", type: "rustic_1" },
+                    { id: 6, name: "স্টেজ ৬: ট্রায়াঙ্গুলার চিসেল রিবাউন্ড", desc: "কোণাকুণি কাঠের চিসেল ত্রিভুজ প্রতিপক্ষকে সরাসরি রক্ষা করে।", type: "rustic_2" },
+                    { id: 7, name: "স্টেজ ৭: তক্তার জিগজ্যাগ মেজ", desc: "তিনটি কাঠের তক্তা ব্লকের সমন্বয়ে বাঁকানো ট্রিক-শট মেজ।", type: "rustic_3" },
+                    { id: 8, name: "স্টেজ ৮: অ্যান্টিক ওয়ার্কশপ দুর্গ", desc: "ভারী আয়রন ডিস্ক, কাঠের ফ্রেম ও স্টিল ট্রায়াঙ্গেল দুর্গ।", type: "rustic_4" }
+                ]
+            },
+            parquet: {
+                title: "🟤 ওয়ার্ম অ্যাম্বার পারকেট",
+                stages: [
+                    { id: 9, name: "স্টেজ ৯: পালিশড মেহগনি রোলার", desc: "মাঝখানে মসৃণ মেহগনি গোলক যা থেকে কলম দ্রুত গতিতে রিবাউন্ড করে।", type: "parquet_1" },
+                    { id: 10, name: "স্টেজ ১০: জিওমেট্রিক ট্রায়াঙ্গেল ডিফেন্স", desc: "ডায়মন্ড স্টাইলে সাজানো দুটি ত্রিভুজ ব্লকেড।", type: "parquet_2" },
+                    { id: 11, name: "স্টেজ ১১: এক্সিকিউটিভ ডাবল ব্লকেড", desc: "সমান্তরাল দুটি আয়তাকার ভারী ব্লক সেন্ট্রাল এরিয়া ভাগ করে।", type: "parquet_3" },
+                    { id: 12, name: "স্টেজ ১২: রয়্যাল ডেসকটপ পিনবল", desc: "৪টি জ্যামিতিক ব্লকের ক্লাসিক ড্রামাটিক কম্বিনেশন।", type: "parquet_4" }
+                ]
+            },
+            coffee: {
+                title: "🪨 আর্টিসান স্টোন কাউন্টার",
+                stages: [
+                    { id: 13, name: "স্টেজ ১৩: কফি বিন বোল ব্যারিয়ার", desc: "মাঝখানে কাঠের কফি বিন বাটি সরাসরি নিশানা আটকে দেয়।", type: "coffee_1" },
+                    { id: 14, name: "স্টেজ ১৪: উডেন স্কুপ প্রিজম", desc: "কফি স্কুপের মতো কোণাকুণি কাঠের ত্রিভুজ শট ঘুরিয়ে দেয়।", type: "coffee_2" },
+                    { id: 15, name: "স্টেজ ১৫: রোস্টারি ক্রস বেরিয়ার", desc: "বার্ল্যাপ পাউচ ও কফি ব্লকের ক্রস ডিফেন্সিভ প্রাচীর।", type: "coffee_3" },
+                    { id: 16, name: "স্টেজ ১৬: ফুল আর্টিসান ক্যাওস", desc: "বোল, পাউচ ও স্কুপের সম্পূর্ণ সেটে আলটিমেট ট্রিক-শট ব্যাটল! 🏆", type: "coffee_4" }
+                ]
+            }
+        };
+
+        let currentObstacleStageType = "cafe_1";
+
+        function buildObstaclesForStage(stageType) {
+            obstacles = [];
+            const midX = table.x + table.width / 2;
+            const midY = table.y + table.height / 2;
+
+            if (stageType === "cafe_1") {
+                obstacles.push(new Obstacle('circle', { x: midX, y: midY - 65, r: 34 }));
+                obstacles.push(new Obstacle('circle', { x: midX, y: midY + 65, r: 34 }));
+            } else if (stageType === "cafe_2") {
+                obstacles.push(new Obstacle('triangle', {
+                    p1: { x: midX, y: midY - 55 },
+                    p2: { x: midX - 45, y: midY + 45 },
+                    p3: { x: midX + 45, y: midY + 45 }
+                }));
+            } else if (stageType === "cafe_3") {
+                obstacles.push(new Obstacle('rect', { x: midX - 35, y: midY - 60, w: 70, h: 28 }));
+                obstacles.push(new Obstacle('circle', { x: midX, y: midY + 45, r: 32 }));
+            } else if (stageType === "cafe_4") {
+                obstacles.push(new Obstacle('circle', { x: midX, y: midY, r: 35 }));
+                obstacles.push(new Obstacle('rect', { x: midX - 35, y: table.y + 40, w: 70, h: 26 }));
+                obstacles.push(new Obstacle('triangle', {
+                    p1: { x: midX, y: table.y + table.height - 80 },
+                    p2: { x: midX - 40, y: table.y + table.height - 35 },
+                    p3: { x: midX + 40, y: table.y + table.height - 35 }
+                }));
+            } else if (stageType === "rustic_1") {
+                obstacles.push(new Obstacle('circle', { x: midX, y: midY - 60, r: 32 }, "rustic_iron"));
+                obstacles.push(new Obstacle('circle', { x: midX, y: midY + 60, r: 32 }, "rustic_iron"));
+            } else if (stageType === "rustic_2") {
+                obstacles.push(new Obstacle('triangle', {
+                    p1: { x: midX, y: midY - 55 },
+                    p2: { x: midX - 40, y: midY + 45 },
+                    p3: { x: midX + 40, y: midY + 45 }
+                }));
+                obstacles.push(new Obstacle('circle', { x: midX, y: table.y + 45, r: 22 }, "rustic_iron"));
+            } else if (stageType === "rustic_3") {
+                obstacles.push(new Obstacle('rect', { x: midX - 35, y: midY - 75, w: 70, h: 26 }, "rustic_timber"));
+                obstacles.push(new Obstacle('rect', { x: midX - 35, y: midY + 45, w: 70, h: 26 }, "rustic_timber"));
+                obstacles.push(new Obstacle('circle', { x: midX, y: midY, r: 24 }, "rustic_iron"));
+            } else if (stageType === "rustic_4") {
+                obstacles.push(new Obstacle('circle', { x: midX, y: midY, r: 34 }, "rustic_iron"));
+                obstacles.push(new Obstacle('rect', { x: midX - 40, y: table.y + 40, w: 80, h: 28 }, "rustic_timber"));
+                obstacles.push(new Obstacle('triangle', {
+                    p1: { x: midX, y: table.y + table.height - 75 },
+                    p2: { x: midX - 40, y: table.y + table.height - 35 },
+                    p3: { x: midX + 40, y: table.y + table.height - 35 }
+                }));
+            } else if (stageType === "parquet_1") {
+                obstacles.push(new Obstacle('circle', { x: midX, y: midY, r: 42 }));
+            } else if (stageType === "parquet_2") {
+                obstacles.push(new Obstacle('triangle', {
+                    p1: { x: midX, y: midY - 70 },
+                    p2: { x: midX - 38, y: midY - 15 },
+                    p3: { x: midX + 38, y: midY - 15 }
+                }));
+                obstacles.push(new Obstacle('triangle', {
+                    p1: { x: midX, y: midY + 70 },
+                    p2: { x: midX - 38, y: midY + 15 },
+                    p3: { x: midX + 38, y: midY + 15 }
+                }));
+            } else if (stageType === "parquet_3") {
+                obstacles.push(new Obstacle('rect', { x: midX - 35, y: midY - 65, w: 70, h: 28 }));
+                obstacles.push(new Obstacle('rect', { x: midX - 35, y: midY + 35, w: 70, h: 28 }));
+            } else if (stageType === "parquet_4") {
+                obstacles.push(new Obstacle('circle', { x: midX, y: midY, r: 35 }));
+                obstacles.push(new Obstacle('rect', { x: midX - 35, y: table.y + 40, w: 70, h: 26 }));
+                obstacles.push(new Obstacle('triangle', {
+                    p1: { x: midX, y: table.y + table.height - 80 },
+                    p2: { x: midX - 40, y: table.y + table.height - 35 },
+                    p3: { x: midX + 40, y: table.y + table.height - 35 }
+                }));
+            } else if (stageType === "coffee_1") {
+                obstacles.push(new Obstacle('circle', { x: midX, y: midY, r: 44 }, "coffee_bowl"));
+            } else if (stageType === "coffee_2") {
+                obstacles.push(new Obstacle('triangle', {
+                    p1: { x: midX, y: midY - 50 },
+                    p2: { x: midX - 45, y: midY + 45 },
+                    p3: { x: midX + 45, y: midY + 45 }
+                }));
+                obstacles.push(new Obstacle('circle', { x: midX, y: table.y + 48, r: 24 }, "coffee_bowl"));
+            } else if (stageType === "coffee_3") {
+                obstacles.push(new Obstacle('rect', { x: midX - 40, y: midY - 60, w: 80, h: 30 }, "burlap"));
+                obstacles.push(new Obstacle('rect', { x: midX - 40, y: midY + 30, w: 80, h: 30 }, "burlap"));
+            } else if (stageType === "coffee_4") {
+                obstacles.push(new Obstacle('circle', { x: midX, y: midY, r: 36 }, "coffee_bowl"));
+                obstacles.push(new Obstacle('rect', { x: midX - 40, y: table.y + 40, w: 80, h: 28 }, "burlap"));
+                obstacles.push(new Obstacle('triangle', {
+                    p1: { x: midX, y: table.y + table.height - 80 },
+                    p2: { x: midX - 40, y: table.y + table.height - 35 },
+                    p3: { x: midX + 40, y: table.y + table.height - 35 }
+                }));
+            }
+        }
+
+        /* =================== গেম স্টেট ও মোড ইনিট =================== */
+        let currentMode = "menu";
+        let pens = [];
+        let playerPen = null;
+        let turn = 1;
+        let isAiming = false;
+        let aimStart = { x: 0, y: 0 };
+        let mousePos = { x: 0, y: 0 };
+        let powerReady = true;
+
+        let campaignLevel = 1;
+        const CAMPAIGN_BOTS = [
+            { level: 1, rank: "রুকি স্টুডেন্ট", penId: 28 },
+            { level: 2, rank: "ক্লাস চ্যাম্পিয়ন", penId: 4 },
+            { level: 3, rank: "স্কুল স্পেশালিস্ট", penId: 51 },
+            { level: 4, rank: "সিটি স্টার", penId: 53 },
+            { level: 5, rank: "গ্র্যান্ডমাস্টার বস", penId: 76 }
+        ];
+
+        let timeRemaining = 60;
+        let timeScore = 0;
+        let timerInterval = null;
+        let peer = null, conn = null, isHost = false, myOnlineTurn = 1;
+
+        function loadObstacleStage(themeKey, stageType, stageName) {
+            isRoundOver = false;
+            currentTableTheme = themeKey;
+            currentObstacleStageType = stageType;
+            pens = [];
+            updateTableDimensions(2, true);
+            buildObstaclesForStage(stageType);
+
+            const midY = table.y + table.height / 2;
+            playerPen = new Pen(1, table.x + 85, midY, 0, selectedPenModel, true);
+            pens.push(playerPen);
+
+            const botModel = PEN_DATABASE[50];
+            const botPen = new Pen(2, table.x + table.width - 85, midY, Math.PI, botModel, false);
+            pens.push(botPen);
+
+            turn = 1;
+            powerReady = true;
+            updatePowerButtonUI();
+            updateHud(`${stageName} — জিতলেই +১০ পয়েন্ট!`);
+        }
+
+        function initCampaignRound(lvl) {
+            isRoundOver = false;
+            currentTableTheme = "parquet";
+            obstacles = [];
+            campaignLevel = lvl;
+            pens = [];
+            updateTableDimensions(2, false);
+
+            playerPen = new Pen(1, table.x + table.width * 0.24, table.y + table.height/2, 0, selectedPenModel, true);
+            pens.push(playerPen);
+
+            const botMeta = CAMPAIGN_BOTS[lvl - 1];
+            const botModel = PEN_DATABASE.find(p => p.id === botMeta.penId) || PEN_DATABASE[0];
+            const botPen = new Pen(2, table.x + table.width * 0.76, table.y + table.height/2, Math.PI, botModel, false);
+            pens.push(botPen);
+
+            turn = 1;
+            powerReady = true;
+            updatePowerButtonUI();
+            updateHud(`${botMeta.rank} (${botModel.name}) — জিতলেই +১০ পয়েন্ট!`);
+        }
+
+        function initTimeAttack() {
+            isRoundOver = false;
+            currentTableTheme = "cafe";
+            obstacles = [];
+            pens = [];
+            timeRemaining = 60;
+            timeScore = 0;
+            if (timerInterval) clearInterval(timerInterval);
+
+            updateTableDimensions(7, false);
+            playerPen = new Pen(1, table.x + table.width/2, table.y + table.height/2, 0, selectedPenModel, true);
+            pens.push(playerPen);
+            spawnDummyPens(6);
+
+            timerInterval = setInterval(() => {
+                if (isRoundOver) {
+                    clearInterval(timerInterval);
+                    return;
+                }
+                timeRemaining--;
+                updateHud(`সময়: ${timeRemaining}s | নকড ডাউন: ${timeScore} টি (পয়েন্ট: ${playerPoints})`);
+                if (timeRemaining <= 0) {
+                    clearInterval(timerInterval);
+                    isRoundOver = true;
+                    let bonusText = "";
+                    if (timeScore >= 30) {
+                        addPoints(10, "৩০+ পেন নকআউট সুপার বোনাস");
+                        bonusText = " 🌟 আপনি ৩০+ পেন ফেলে +১০ বোনাস পয়েন্ট জিতেছেন!";
+                    }
+                    showGameOver("টাইম শেষ!", `৬০ সেকেন্ডে আপনি মোট ${timeScore} টি পেন ফেলেছেন!${bonusText}`, false);
+                }
+            }, 1000);
+
+            powerReady = true;
+            updatePowerButtonUI();
+            updateHud(`সময়: 60s | নকড ডাউন: 0 (প্রতি পেনে ১ পয়েন্ট)`);
+        }
+
+        function spawnDummyPens(count) {
+            for (let i = 0; i < count; i++) {
+                let rx, ry, safe = false;
+                while(!safe) {
+                    rx = table.x + 60 + Math.random() * (table.width - 120);
+                    ry = table.y + 50 + Math.random() * (table.height - 100);
+                    safe = Math.hypot(rx - playerPen.x, ry - playerPen.y) > 100;
+                }
+                const randomModel = PEN_DATABASE[Math.floor(Math.random() * PEN_DATABASE.length)];
+                pens.push(new Pen(100 + i, rx, ry, Math.random() * Math.PI * 2, randomModel, false));
+            }
+        }
+
+        function initOnlineRound() {
+            isRoundOver = false;
+            currentTableTheme = "rustic";
+            obstacles = [];
+            pens = [];
+            updateTableDimensions(2, false);
+
+            const p1 = new Pen(1, table.x + table.width * 0.24, table.y + table.height/2, 0, isHost ? selectedPenModel : PEN_DATABASE[0], isHost);
+            const p2 = new Pen(2, table.x + table.width * 0.76, table.y + table.height/2, Math.PI, !isHost ? selectedPenModel : PEN_DATABASE[1], !isHost);
+            pens.push(p1, p2);
+            playerPen = (myOnlineTurn === 1) ? p1 : p2;
+            turn = 1;
+            powerReady = true;
+            updatePowerButtonUI();
+            updateHud(turn === myOnlineTurn ? "অনলাইন ম্যাচ: আপনার চাল!" : "অনলাইন ম্যাচ: প্রতিপক্ষের চাল...");
+        }
+
+        /* =================== এআই লজিক =================== */
+        let aiThinking = false;
+        function processAITurn() {
+            if (aiThinking || isAnyPenMoving() || pens[1].fallen || pens[0].fallen || isRoundOver) return;
+            aiThinking = true;
+
+            setTimeout(() => {
+                if (isRoundOver) return;
+                const ai = pens[1];
+                const target = pens[0];
+
+                if ((campaignLevel >= 3 || currentMode === "obstacle") && Math.random() > 0.4) {
+                    ai.powerActivated = true;
+                    soundPower();
+                }
+
+                let dx = target.x - ai.x;
+                let dy = target.y - ai.y;
+                let angle = Math.atan2(dy, dx);
+
+                if (currentMode === "obstacle") {
+                    angle += (Math.random() > 0.5 ? 0.45 : -0.45);
+                } else {
+                    let jitter = (6 - campaignLevel) * 0.07 * (Math.random() - 0.5);
+                    angle += jitter;
+                }
+
+                let dist = Math.hypot(dx, dy);
+                let power = Math.min((dist * 0.04) + 2.5, MAX_SPEED * 0.9);
+
+                if (ai.powerActivated && ai.model.type === "Gel") power *= 1.4;
+
+                ai.vx = Math.cos(angle) * power;
+                ai.vy = Math.sin(angle) * power;
+                ai.angle = angle;
+
+                soundFlick();
+                aiThinking = false;
+                turn = 1;
+                powerReady = true;
+                updatePowerButtonUI();
+                updateHud(currentMode === "obstacle" ? "প্রতিপক্ষ চাল দিয়েছে — এবার আপনার চাল!" : `${CAMPAIGN_BOTS[campaignLevel - 1].rank} চাল দিয়েছে — আপনার চাল!`);
+            }, 850);
+        }
+
+        /* =================== পাওয়ার ও ইনপুট =================== */
+        const btnPower = document.getElementById("btn-power-trigger");
+        function togglePower() {
+            if (!powerReady || isAnyPenMoving() || !playerPen || isRoundOver) return;
+            playerPen.powerActivated = !playerPen.powerActivated;
+            if (playerPen.powerActivated) {
+                soundPower();
+                btnPower.classList.add("active");
+                btnPower.innerText = `⚡ ${CATEGORY_POWERS[playerPen.model.type].name} (সক্রিয়)`;
+            } else {
+                btnPower.classList.remove("active");
+                btnPower.innerText = `⚡ পাওয়ার রেডি [Space]`;
+            }
+        }
+        btnPower.onclick = togglePower;
+
+        function updatePowerButtonUI() {
+            const pMeta = CATEGORY_POWERS[selectedPenModel.type];
+            btnPower.classList.remove("active", "cooldown");
+            btnPower.innerText = `⚡ ${pMeta.name} [Space]`;
+        }
+
+        canvas.addEventListener("mousedown", (e) => {
+            initAudio();
+            if (currentMode === "menu" || isAnyPenMoving() || isRoundOver) return;
+
+            const rect = canvas.getBoundingClientRect();
+            mousePos.x = e.clientX - rect.left;
+            mousePos.y = e.clientY - rect.top;
+
+            if ((currentMode === "campaign" || currentMode === "obstacle") && turn !== 1) return;
+            if (currentMode === "online" && turn !== myOnlineTurn) return;
+
+            const targetPen = currentMode === "time" ? playerPen : (turn === 1 ? pens[0] : pens[1]);
+            if (!targetPen || targetPen.fallen) return;
+
+            if (Math.hypot(mousePos.x - targetPen.x, mousePos.y - targetPen.y) < targetPen.radius + 18) {
+                isAiming = true;
+                aimStart = { x: targetPen.x, y: targetPen.y };
+            }
+        });
+
+        window.addEventListener("mousemove", (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mousePos.x = e.clientX - rect.left;
+            mousePos.y = e.clientY - rect.top;
+        });
+
+        window.addEventListener("mouseup", () => {
+            if (!isAiming || isRoundOver) return;
+            isAiming = false;
+
+            const activePen = currentMode === "time" ? playerPen : (turn === 1 ? pens[0] : pens[1]);
+            const pullX = aimStart.x - mousePos.x;
+            const pullY = aimStart.y - mousePos.y;
+            const pullDist = Math.hypot(pullX, pullY);
+
+            if (pullDist > 12) {
+                const pullClamped = Math.min(pullDist, MAX_PULL);
+                let power = Math.min(pullClamped * POWER_SCALE * activePen.speedMult, MAX_SPEED);
+
+                if (activePen.powerActivated && activePen.model.type === "Gel") {
+                    power *= 1.45;
+                }
+
+                const angle = Math.atan2(pullY, pullX);
+                activePen.vx = Math.cos(angle) * power;
+                activePen.vy = Math.sin(angle) * power;
+                activePen.angle = angle;
+                soundFlick();
+
+                if (currentMode === "online" && conn && conn.open) {
+                    conn.send({
+                        type: "flick",
+                        penId: activePen.id,
+                        vx: activePen.vx,
+                        vy: activePen.vy,
+                        angle: angle,
+                        powerActive: activePen.powerActivated
+                    });
+                }
+
+                btnPower.classList.remove("active");
+                btnPower.classList.add("cooldown");
+                btnPower.innerText = "⚡ চার্জ হচ্ছে...";
+
+                if (currentMode === "campaign" || currentMode === "obstacle") {
+                    turn = 2;
+                    updateHud("প্রতিপক্ষ নিশানা করছে...");
+                } else if (currentMode === "online") {
+                    turn = turn === 1 ? 2 : 1;
+                    updateHud(turn === myOnlineTurn ? "অনলাইন ম্যাচ: আপনার চাল!" : "অনলাইন ম্যাচ: প্রতিপক্ষের চাল...");
+                }
+            }
+        });
+
+        window.addEventListener("keydown", (e) => {
+            if (e.code === "Space") {
+                e.preventDefault();
+                togglePower();
+            }
+            if (e.key.toLowerCase() === "r") restartCurrentMode();
+        });
+
+        /* =================== ৪টি ছবির টেবিল ব্যাকগ্রাউন্ড =================== */
+        function drawTableBackground() {
+            ctx.save();
+            if (currentTableTheme === "cafe") {
+                const grad = ctx.createRadialGradient(
+                    table.x + table.width/2, table.y + table.height/2, 30,
+                    table.x + table.width/2, table.y + table.height/2, table.width * 0.6
+                );
+                grad.addColorStop(0, "#c28d58");
+                grad.addColorStop(1, "#9c683b");
+                ctx.fillStyle = grad;
+                ctx.fillRect(table.x, table.y, table.width, table.height);
+                ctx.strokeStyle = "#6d4422";
+                ctx.lineWidth = 14;
+                ctx.strokeRect(table.x, table.y, table.width, table.height);
+
+            } else if (currentTableTheme === "rustic") {
+                const plankWidth = 55;
+                const count = Math.ceil(table.width / plankWidth);
+                for (let i = 0; i < count; i++) {
+                    const px = table.x + i * plankWidth;
+                    const pw = Math.min(plankWidth, table.x + table.width - px);
+                    ctx.fillStyle = (i % 2 === 0) ? "#6e6259" : "#5d544c";
+                    ctx.fillRect(px, table.y, pw, table.height);
+                    ctx.strokeStyle = "#38312b";
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(px, table.y, pw, table.height);
+                    if (i % 3 === 1) {
+                        ctx.fillStyle = "rgba(40, 35, 30, 0.35)";
+                        ctx.beginPath();
+                        ctx.arc(px + pw/2, table.y + 80 + (i*50)%200, 14, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                ctx.strokeStyle = "#2e241c";
+                ctx.lineWidth = 14;
+                ctx.strokeRect(table.x, table.y, table.width, table.height);
+
+            } else if (currentTableTheme === "parquet") {
+                const plankHeight = 44;
+                const count = Math.ceil(table.height / plankHeight);
+                for (let i = 0; i < count; i++) {
+                    const py = table.y + i * plankHeight;
+                    const ph = Math.min(plankHeight, table.y + table.height - py);
+                    ctx.fillStyle = (i % 2 === 0) ? "#a35c27" : "#8c4d1e";
+                    ctx.fillRect(table.x, py, table.width, ph);
+                    ctx.strokeStyle = "#5a2d0c";
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(table.x, py, table.width, ph);
+                }
+                const vig = ctx.createRadialGradient(
+                    table.x + table.width/2, table.y + table.height/2, table.width * 0.25,
+                    table.x + table.width/2, table.y + table.height/2, table.width * 0.55
+                );
+                vig.addColorStop(0, "rgba(0,0,0,0)");
+                vig.addColorStop(1, "rgba(0,0,0,0.5)");
+                ctx.fillStyle = vig;
+                ctx.fillRect(table.x, table.y, table.width, table.height);
+                ctx.strokeStyle = "#45220a";
+                ctx.lineWidth = 14;
+                ctx.strokeRect(table.x, table.y, table.width, table.height);
+
+            } else if (currentTableTheme === "coffee") {
+                const grad = ctx.createLinearGradient(table.x, table.y, table.x + table.width, table.y + table.height);
+                grad.addColorStop(0, "#d8cfc4");
+                grad.addColorStop(0.5, "#c5bbae");
+                grad.addColorStop(1, "#b5aa9b");
+                ctx.fillStyle = grad;
+                ctx.fillRect(table.x, table.y, table.width, table.height);
+                ctx.strokeStyle = "#6b5b4d";
+                ctx.lineWidth = 14;
+                ctx.strokeRect(table.x, table.y, table.width, table.height);
+            }
+            ctx.restore();
+        }
+
+        /* =================== গেম লুপ ও রেন্ডারিং (ফিক্সড পয়েন্ট লজিক) =================== */
+        function gameLoop() {
+            pens.forEach(p => p.update());
+            handleCollisions();
+
+            // টাইম অ্যাটাক: প্রতি পেনে ১ পয়েন্ট
+            if (currentMode === "time" && !isRoundOver) {
+                pens.forEach((p, idx) => {
+                    if (idx !== 0 && p.fallen && !p.counted) {
+                        p.counted = true;
+                        timeScore++;
+                        addPoints(1, "পেন নকআউট");
+                    }
+                });
+
+                const fullyFallen = pens.filter((p, idx) => idx !== 0 && p.fallen && p.fallScale <= 0);
+                if (fullyFallen.length > 0) {
+                    pens = pens.filter(p => !p.fallen || p.fallScale > 0);
+                    spawnDummyPens(fullyFallen.length);
+                }
+
+                if (playerPen && playerPen.fallen && !isRoundOver) {
+                    isRoundOver = true;
+                    clearInterval(timerInterval);
+                    let bonusText = "";
+                    if (timeScore >= 30) {
+                        addPoints(10, "৩০+ পেন নকআউট সুপার বোনাস");
+                        bonusText = " 🌟 আপনি ৩০+ পেন ফেলে +১০ বোনাস পয়েন্ট জিতেছেন!";
+                    }
+                    showGameOver("আপনি পড়ে গেছেন!", `আপনার মোট স্কোর: ${timeScore} টি কলম (${timeScore} পয়েন্ট অর্জিত)${bonusText}`, false);
+                }
+            }
+
+            // ক্যাম্পেইন মোড: প্রতি লেভেলে নিশ্চিত ১০ পয়েন্ট (একবারই এক্সিকিউট হবে)
+            if (currentMode === "campaign" && !isRoundOver && !isAnyPenMoving()) {
+                if (pens[0].fallen) {
+                    isRoundOver = true;
+                    showGameOver("পরাজিত!", `${CAMPAIGN_BOTS[campaignLevel - 1].rank} আপনাকে ছিটকে ফেলেছে।`, false);
+                } else if (pens[1].fallen) {
+                    isRoundOver = true;
+                    addPoints(10, `লেভেল ${campaignLevel} জয়`);
+                    if (campaignLevel < 5) {
+                        showGameOver("লেভেল সমাপ্ত! 🏆", `দারুণ কৌশল! আপনি +১০ পয়েন্ট অর্জন করেছেন। পরবর্তী লেভেলে যান।`, true);
+                    } else {
+                        showGameOver("চ্যাম্পিয়ন! 👑", `অভিনন্দন! আপনি গ্র্যান্ডমাস্টারসহ সব লেভেল জয় করেছেন এবং +১০ পয়েন্ট পেয়েছেন!`, false);
+                    }
+                } else if (turn === 2) {
+                    processAITurn();
+                }
+            }
+
+            // অবস্ট্যাকল মোড: প্রতি স্টেজ জয়ে নিশ্চিত ১০ পয়েন্ট (একবারই এক্সিকিউট হবে)
+            if (currentMode === "obstacle" && !isRoundOver && !isAnyPenMoving()) {
+                if (pens[0].fallen) {
+                    isRoundOver = true;
+                    showGameOver("পরাজিত!", "প্রতিপক্ষ আপনাকে অবস্ট্যাকলের পাশ দিয়ে ফেলে দিয়েছে!", false);
+                } else if (pens[1].fallen) {
+                    isRoundOver = true;
+                    addPoints(10, "অবস্ট্যাকল স্টেজ বিজয়");
+                    showGameOver("বিজয়ী! 🏆", "চমৎকার ট্রিক-শট! আপনি স্টেজ পার হয়ে +১০ পয়েন্ট অর্জন করেছেন!", false);
+                } else if (turn === 2) {
+                    processAITurn();
+                }
+            }
+
+            // অনলাইন মোড: জয়ী হলে ১০ পয়েন্ট
+            if (currentMode === "online" && !isRoundOver && !isAnyPenMoving()) {
+                if (pens[0].fallen || pens[1].fallen) {
+                    isRoundOver = true;
+                    const won = (pens[0].fallen && myOnlineTurn === 2) || (pens[1].fallen && myOnlineTurn === 1);
+                    if (won) addPoints(10, "অনলাইন ম্যাচ জয়");
+                    showGameOver("ম্যাচ সমাপ্ত!", won ? "আপনি বিজয়ী হয়ে +১০ পয়েন্ট পেয়েছেন! 🏆" : "প্রতিপক্ষ জিতেছে!", false);
+                }
+            }
+
+            // ড্রয়িং
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#12141c";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawTableBackground();
+            obstacles.forEach(obs => obs.draw());
+
+            if (isAiming) {
+                const activePen = currentMode === "time" ? playerPen : (turn === 1 ? pens[0] : pens[1]);
+                const pullX = aimStart.x - mousePos.x;
+                const pullY = aimStart.y - mousePos.y;
+                const pullDist = Math.hypot(pullX, pullY);
+
+                if (pullDist > 8) {
+                    const lineLen = Math.min(pullDist, MAX_PULL);
+                    const angle = Math.atan2(pullY, pullX);
+                    const targetX = activePen.x + Math.cos(angle) * lineLen;
+                    const targetY = activePen.y + Math.sin(angle) * lineLen;
+
+                    ctx.beginPath();
+                    ctx.moveTo(activePen.x, activePen.y);
+                    ctx.lineTo(targetX, targetY);
+                    ctx.strokeStyle = activePen.powerActivated ? "#10b981" : "rgba(255, 230, 0, 0.85)";
+                    ctx.lineWidth = 4;
+                    ctx.setLineDash([6, 6]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    ctx.beginPath();
+                    ctx.arc(targetX, targetY, 6, 0, Math.PI * 2);
+                    ctx.fillStyle = activePen.powerActivated ? "#34d399" : "#f59e0b";
+                    ctx.fill();
+                }
+            }
+
+            pens.forEach(p => p.draw());
+            requestAnimationFrame(gameLoop);
+        }
+
+        /* =================== UI ও পেন শপ হ্যান্ডলার =================== */
+        const modalMenu = document.getElementById("modal-menu");
+        const modalStageSelect = document.getElementById("modal-stage-select");
+        const modalGarage = document.getElementById("modal-garage");
+        const modalOnline = document.getElementById("modal-online");
+        const modalGameOver = document.getElementById("modal-gameover");
+        const hudStatus = document.getElementById("hud-status");
+
+        function updateHud(text) { hudStatus.innerText = text; }
+
+        function renderStagesList(themeKey) {
+            const container = document.getElementById("stages-container");
+            container.innerHTML = "";
+            const theme = ARENA_THEMES_DATA[themeKey];
+
+            theme.stages.forEach(st => {
+                const card = document.createElement("div");
+                card.className = "stage-card";
+                card.innerHTML = `
+                    <div>
+                        <h4>${st.name}</h4>
+                        <p>${st.desc}</p>
+                    </div>
+                    <span class="stage-badge">খেলুন (পুরস্কার: 🪙 ১০ পয়েন্ট) ▶</span>
+                `;
+                card.onclick = () => {
+                    initAudio();
+                    modalStageSelect.classList.add("hidden");
+                    currentMode = "obstacle";
+                    loadObstacleStage(themeKey, st.type, st.name);
+                };
+                container.appendChild(card);
+            });
+        }
+
+        document.querySelectorAll(".theme-tab-btn").forEach(btn => {
+            btn.onclick = (e) => {
+                document.querySelectorAll(".theme-tab-btn").forEach(b => b.classList.remove("active"));
+                e.target.classList.add("active");
+                renderStagesList(e.target.dataset.theme);
+            };
+        });
+
+        document.getElementById("btn-mode-obstacle").onclick = () => {
+            initAudio();
+            modalMenu.classList.add("hidden");
+            modalStageSelect.classList.remove("hidden");
+            renderStagesList("cafe");
+        };
+
+        document.getElementById("btn-close-stages").onclick = () => {
+            modalStageSelect.classList.add("hidden");
+            modalMenu.classList.remove("hidden");
+        };
+
+        function renderGarage(filter = "all") {
+            const container = document.getElementById("pen-grid-container");
+            container.innerHTML = "";
+            const filteredList = filter === "all" ? PEN_DATABASE : PEN_DATABASE.filter(p => p.type === filter);
+
+            filteredList.forEach(pen => {
+                const isUnlocked = unlockedPenIds.includes(pen.id);
+                const isSelected = selectedPenModel.id === pen.id;
+                const price = getPenPrice(pen);
+
+                const card = document.createElement("div");
+                card.className = `pen-card ${isSelected ? "selected" : ""} ${!isUnlocked ? "locked" : ""}`;
+                const pMeta = CATEGORY_POWERS[pen.type];
+
+                let actionBtnHtml = "";
+                if (isSelected) {
+                    actionBtnHtml = `<button class="btn-buy-pen active">✓ নির্বাচিত</button>`;
+                } else if (isUnlocked) {
+                    actionBtnHtml = `<button class="btn-buy-pen select">সিলেক্ট করুন</button>`;
+                } else {
+                    actionBtnHtml = `<button class="btn-buy-pen buy">🔒 কিনুন (🪙 ${price})</button>`;
+                }
+
+                card.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:700; font-size:12px;">${pen.name}</span>
+                        <span style="font-size:13px;">${pen.country}</span>
+                    </div>
+                    <div class="pen-preview-bar" style="background: linear-gradient(to right, ${pen.cap} 35%, ${pen.body} 35%);"></div>
+                    <div class="stat-row"><span>টাইপ:</span><span>${pen.type}</span></div>
+                    <div class="stat-row"><span>ওজন/ভর:</span><span>${pen.mass.toFixed(2)}x</span></div>
+                    <div class="stat-row"><span>স্পিড:</span><span>${Math.round(pen.speed * 100)}%</span></div>
+                    <div class="ability-badge">
+                        <strong>${pMeta.name}</strong><br>
+                        ${pMeta.passive}
+                    </div>
+                    ${actionBtnHtml}
+                `;
+
+                card.onclick = () => {
+                    if (isUnlocked) {
+                        selectedPenModel = pen;
+                        document.getElementById("selected-pen-name-display").innerText = `বর্তমান পেন: ${pen.name} (${pen.country}) — ${pMeta.name}`;
+                        updatePowerButtonUI();
+                        renderGarage(filter);
+                    } else {
+                        if (playerPoints >= price) {
+                            if (confirm(`${pen.name} কলমটি ${price} পয়েন্ট দিয়ে কিনতে চান?`)) {
+                                playerPoints -= price;
+                                unlockedPenIds.push(pen.id);
+                                selectedPenModel = pen;
+                                saveEconomy();
+                                soundPower();
+                                showRewardToast(`🎉 ${pen.name} আনলক হয়েছে!`);
+                                document.getElementById("selected-pen-name-display").innerText = `বর্তমান পেন: ${pen.name} (${pen.country}) — ${pMeta.name}`;
+                                updatePowerButtonUI();
+                                renderGarage(filter);
+                            }
+                        } else {
+                            alert(`পর্যাপ্ত পয়েন্ট নেই! আপনার পয়েন্ট: ${playerPoints}, প্রয়োজন: ${price} পয়েন্ট। গেম খেলে আরও পয়েন্ট অর্জন করুন!`);
+                        }
+                    }
+                };
+                container.appendChild(card);
+            });
+        }
+
+        document.querySelectorAll(".tab-btn").forEach(btn => {
+            btn.onclick = (e) => {
+                document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+                e.target.classList.add("active");
+                renderGarage(e.target.dataset.filter);
+            };
+        });
+
+        document.getElementById("btn-open-garage").onclick = () => {
+            modalGarage.classList.remove("hidden");
+            renderGarage("all");
+        };
+        document.getElementById("btn-menu-garage").onclick = () => {
+            modalGarage.classList.remove("hidden");
+            renderGarage("all");
+        };
+        document.getElementById("btn-close-garage").onclick = () => {
+            modalGarage.classList.add("hidden");
+        };
+
+        // মোড বাটনসমূহ
+        document.getElementById("btn-mode-campaign").onclick = () => {
+            initAudio();
+            modalMenu.classList.add("hidden");
+            currentMode = "campaign";
+            initCampaignRound(1);
+        };
+        document.getElementById("btn-mode-time").onclick = () => {
+            initAudio();
+            modalMenu.classList.add("hidden");
+            currentMode = "time";
+            initTimeAttack();
+        };
+        document.getElementById("btn-mode-online").onclick = () => {
+            initAudio();
+            modalMenu.classList.add("hidden");
+            modalOnline.classList.remove("hidden");
+            setupPeerJS();
+        };
+
+        document.getElementById("btn-back-menu").onclick = () => {
+            isRoundOver = true;
+            if (timerInterval) clearInterval(timerInterval);
+            currentMode = "menu";
+            modalGameOver.classList.add("hidden");
+            modalOnline.classList.add("hidden");
+            modalStageSelect.classList.add("hidden");
+            modalMenu.classList.remove("hidden");
+            updateHud("পেন ফাইট এরিনা");
+        };
+
+        document.getElementById("btn-restart").onclick = restartCurrentMode;
+
+        function restartCurrentMode() {
+            isRoundOver = false;
+            modalGameOver.classList.add("hidden");
+            if (currentMode === "obstacle") loadObstacleStage(currentTableTheme, currentObstacleStageType, "রিলোডেড স্টেজ");
+            else if (currentMode === "campaign") initCampaignRound(campaignLevel);
+            else if (currentMode === "time") initTimeAttack();
+            else if (currentMode === "online") initOnlineRound();
+        }
+
+        function showGameOver(title, desc, isWinAdvance) {
+            document.getElementById("go-title").innerText = title;
+            document.getElementById("go-desc").innerText = desc;
+            const actionBtn = document.getElementById("go-btn-action");
+
+            if (isWinAdvance && currentMode === "campaign") {
+                actionBtn.innerText = "পরবর্তী লেভেল ▶";
+                actionBtn.onclick = () => {
+                    modalGameOver.classList.add("hidden");
+                    initCampaignRound(campaignLevel + 1);
+                };
+            } else {
+                actionBtn.innerText = "আবার খেলুন ↺";
+                actionBtn.onclick = restartCurrentMode;
+            }
+            modalGameOver.classList.remove("hidden");
+        }
+
+        /* =================== PeerJS অনলাইন মাল্টিপ্লেয়ার =================== */
+        function setupPeerJS() {
+            const status = document.getElementById("online-status-text");
+            const codeInput = document.getElementById("my-peer-id");
+            status.innerText = "সার্ভারের সাথে যুক্ত হচ্ছে...";
+
+            const roomCode = "pen-" + Math.floor(1000 + Math.random() * 9000);
+            peer = new Peer(roomCode);
+
+            peer.on("open", (id) => {
+                codeInput.value = id;
+                status.innerText = "কোডটি বন্ধুকে দিন অথবা বন্ধুর কোড নিচে বসান।";
+            });
+
+            peer.on("connection", (c) => {
+                conn = c;
+                isHost = true;
+                myOnlineTurn = 1;
+                bindConnection();
+                startOnline();
+            });
+
+            peer.on("error", (err) => {
+                status.innerText = "কানেকশন এরর: " + err.type;
+            });
+        }
+
+        document.getElementById("btn-join-room").onclick = () => {
+            const target = document.getElementById("join-peer-id").value.trim();
+            if (!target || !peer) return;
+
+            document.getElementById("online-status-text").innerText = "কানেক্ট করা হচ্ছে...";
+            conn = peer.connect(target);
+            isHost = false;
+            myOnlineTurn = 2;
+            bindConnection();
+        };
+
+        function bindConnection() {
+            conn.on("open", startOnline);
+            conn.on("data", (data) => {
+                if (data.type === "flick") {
+                    const pen = pens.find(p => p.id === data.penId);
+                    if (pen) {
+                        pen.vx = data.vx;
+                        pen.vy = data.vy;
+                        pen.angle = data.angle;
+                        pen.powerActivated = data.powerActive;
+                        soundFlick();
+                        turn = myOnlineTurn;
+                        powerReady = true;
+                        updatePowerButtonUI();
+                        updateHud("অনলাইন ম্যাচ: আপনার চাল!");
+                    }
+                }
+            });
+            conn.on("close", () => {
+                alert("প্রতিপক্ষ ডিসকানেক্ট হয়ে গেছে!");
+                location.reload();
+            });
+        }
+
+        function startOnline() {
+            modalOnline.classList.add("hidden");
+            currentMode = "online";
+            initOnlineRound();
+        }
+
+        document.getElementById("btn-cancel-online").onclick = () => {
+            if (peer) peer.destroy();
+            modalOnline.classList.add("hidden");
+            modalMenu.classList.remove("hidden");
+        };
+
+        // প্রারম্ভিক ইনিট
+        updatePointsDisplays();
+        updateTableDimensions(2, false);
+        renderGarage("all");
+        updatePowerButtonUI();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
